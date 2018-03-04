@@ -1,7 +1,7 @@
-$myver = "1.5.4"
+$myVer = "1.4.8"
 <#
 #########################################################
-Basic AD Sync Script for Powershell		        
+Basic AD-CSV Sync Script for Powershell		        
 Created by Desmond Kent 				                
 Powershell is a powerful tool but i could never find  
 a Basic Sync script online where the CSV file was the 
@@ -11,67 +11,46 @@ complicated so i set out to just create a Basic Script
 You will need to alter the script to your requirements
 Script can be called by creating a simple batch file  
 powershell.exe -nologo -executionpolicy bypass -noprofile -file "C:\Scripts\SyncADUsersCsv\SyncAdUsers-CSV.ps1"
-There are currently Three States a user account can be in for the Script	    
-True:       Meaning that the account is active and in the 	
-            Users OU for Blah Domain.				                
-False:      which means that the user is disabled but still 
-            has a user account. 
-Deleted:    Please note that the Account   	
-            expiry is set on the account when it is made inactive 
-            And Deleted. The script only needs to run once after  
-            user account has been set to deleted. Once this has   
-            run the account will no longer be picked up by the 	
-            script.
-					                        
+There are currently Three Status for the Script	    
+True Meaning that the account is active and in the 	
+Users OU for Blah Domain.				                
+False which means that the user is disabled but still 
+has a user account. Please note that the Account   	
+expiry is set on the account when it is made inactive 
+And Deleted. The script only needs to run once after  
+user account has been set to deleted. Once this has   
+run the account will no longer be picked up by the 	
+script.						                        
 Depending on Auditing within your organisation Leaving
-the users disabled might be a requirement for legal requirements.				 	                
-
-V0.0:   Syncing with a CSV file for Basic enable-disable of accts					                        
-V1.0:   01/11/2015 Project Start
+the users details within the Excel document might be  
+a legal requirement.				 	                
+V 1 Syncs with a CSV file which is the primary point  
+of Truth						                        
+V1.0: 01/11/2015 Project Start
 V1.1.1: 25/11/2015 Minor Changes
-V1.2:   04/12/2015 Password Troubleshoot and create RandomPassword
+V1.2: 04/12/2015 Password Troubleshoot and create RandomPassword
 V1.2.2: 8/12/2015 OU Cleanup Added
-V1.3:   Add Different Companys in OU Structure
-V1.4:   Create missing Default OU's
+V1.3: Add Different Companys in OU Structure
+V1.4: Create missing Default OU's
 V1.4.2: 22/01/2016
         Cleaned up code. Added Mobile/Office Number 
         Corrected OU Creation Issue if $CompanyOU Doesn't exist
         Added User Changable OU's
-V1.4.8  29/02/2016
+V1.4.8 29/02/2016
         Corrected and issue were the CSV file was being culled of users.
         Added creation of OU's where a Company OU doesn't exist.
         Cleaned up code
         Added in -Dev for Testing a Dev CSV file in your environment Only users in this CSV will be affected.
         Added description for OU Creation and created variable for OU protection.
-V1.5    27-02-18
-        Added in support for SQL
-V1.5.1  28-02-18
-        Reading users and writing updated back to SQL database
-V1.5.2  01-03-18
-        Writing log file into Database
-V1.5.3  01-03-18
-        Added Reading attributes to SQL Database and Checking for SQL module
-        Created SQL creation Scripts
-        Removal of File based Log file
-
 
 Organisational Unit Creations.
 Each Base ou will create three Child OU's Under them
 Users (Active Users)
 Inactive (Disabled Users)
 Service (Service Account. Which will only be created if a service user is inserted)
-These can be altered by chaging the Default OU Names Variables in the Attrib table.
-
-SQL Setup Create a Database Called ADSYNC. If you don't wish to call it ADSYNC
-Change the Variable in the script below called SQLDATABASENAME
-you can target a specific SQL database server called SQLDATABASESERVER.
-You will also need to update the SQL setup Script that'll be provided with this.
-This setup has only been tested on SQL Express 2017.
-You will need to install the SQLserver module by running 
-install-module SQLServer
-You will need to accept all the installation requests.
+These can be altered by chaging the Default OU Names Variables
 						                            
-			        
+Future releases will sync with SQL. 			        
 If you want my e-mail address then you will know what 
 to do with this.					                    
 							                            
@@ -83,68 +62,53 @@ to do with this.
 
 #>
 
-import-module sqlserver
-
 $ErrorActionPreference = "SilentlyContinue"
-Remove-Variable Today_Date,Log,ScriptStartTime,csvimport,User,SQLDATATABLENAME,CSVExportFile -ErrorAction SilentlyContinue
+Remove-Variable Today_Date,Log,ScriptStartTime,csvimport,User,CSVfile,CSVExportFile -ErrorAction SilentlyContinue
 New-variable -name Today_Date -value (get-date -format dd-MM-yyyy) -Visibility Private
 New-variable -name ScriptStartTime -value (get-date) -Visibility Private
 
-#UserSet Variables
-$SQLDATABASESERVER = "Stafford"
-$SQLDATABASENAME = "ADSYNC"
+if ($myver -like "*Dev*"){
+write-host ("--------------------------------------------------------------------------------------------------------") -ForegroundColor Red
+write-host ("---------------------------------------Dev Version $myVer ---------------------------------------") -ForegroundColor Red
+write-host ("--------------------------------------------------------------------------------------------------------") -ForegroundColor Red
+sleep(1)
+New-variable -name CSVFile -Value  "\\contoso\scripts\SyncADUsersCsv\Users-dev.csv" -Visibility Private
+}
+Else {
+New-variable -name CSVFile -Value  "\\contoso\scripts\SyncADUsersCsv\Users.csv" -Visibility Private
+}
+New-variable -name CSVExportFile -Value  "\\contoso\scripts\SyncADUsersCsv\Users-Export.csv" -Visibility Private
+New-variable -name CSVImport -Value  (import-csv $CSVFile | sort SamAccountName)  -Visibility Private
+New-variable -name User -value " " -Visibility Private
+New-variable -name Log  -value "\\contoso\scripts\logs\AdSync-Log-$Today_Date-V$myVer.txt" -Visibility Private
+$CompanyName = "contoso"
+$distinguishedName = "DC=contoso,DC=homeip,DC=net"
+$UPND = "@contoso.homeip.net"
+
 $UserOuDescription = "Created By Script $Today_Date"
 $InactiveOuDescription = "Created By Script $Today_Date"
 $ServiceOuDescription = "Created By Script $Today_Date"
 $CompanyOuDescription = "Created By Script $Today_Date"
 
 
-#reading Attributes From DB
-$attrib = (read-sqltabledata -serverInstance $SQLDATABASESERVER -databasename $SQLDATABASENAME -schemaname dbo -tablename Attrib) | where MyVer -EQ $myver
+#OU protection 0 off: 1 on
+$ouProtect = 0
 
-#Checking for A Script Version Attribute
-if ($attrib.MyVer -ne $myver){write-host "No V$myver attributes in Database.`r`nExiting......." -ForegroundColor Red
-Exit}
+#Default OU Names
+$UsersOU = "Users"
+$DisabledOU = "Inactive"
+$ServicesOU = "Service"
 
-#Growing the Attributes for the Script from the DB
-$CompanyName = $attrib.companyname
-$distinguishedName = $attrib.DistinguishedName
-$TOPOU =$attrib.TopOU
-$UPND = $attrib.UPND
-$ouProtect = $attrib.OUProtect
-$SQLDATALIVENAME = $attrib.DatabaseLiveName
-$SQLDATADevTableName = $attrib.DatabaseDevTableName
-$UsersOU = $attrib.UsersOU
-$DisabledOU = $attrib.DisabledOU
-$ServicesOU = $attrib.ServicesOU
-
-#Building OU Structure naming Convention
+#Compile OU Structure
 $Userou="OU=$UsersOU,"
 $Disou="OU=$DisabledOU,"
 $Serviceou="OU=$ServicesOU,"
-
-
-# Checking for Dev / Live DB Details and Logging Accordingly.
-if ($myver -like "*Dev*"){
-write-host ("--------------------------------------------------------------------------------------------------------") -ForegroundColor Red
-write-host ("---------------------------------------Dev Version $myVer -------------------------------------------") -ForegroundColor Red
-write-host ("--------------------------------------------------------------------------------------------------------") -ForegroundColor Red
-
-New-variable -name SQLDATATABLENAME -Value  $SQLDATADevTableName -Visibility Private
-}
-Else {
-New-variable -name SQLDATATABLENAME -Value  $SQLDATALIVENAME -Visibility Private
-}
-New-variable -name User -value " " -Visibility Private
-
+$DaysBeforeDelete = -200
+# remove-item -path $log -ErrorAction SilentlyContinue
 ErrorActionPreference = "Continue"
+#Sort CSV Import
 
-#Import From SQL and Sort Import
-$CSVImport = (read-sqltabledata -serverInstance $SQLDATABASESERVER -databasename $SQLDATABASENAME -schemaname dbo -tablename $SQLDATATABLENAME)
-$CSVImport = ($CSVImport | sort company,Status,surname)
-
-
-
+$CSVImport = $CSVImport | sort EmployeeID | sort Status -Descending 
 
 #Start Functions ------------------------------------------------------------------------------------
 
@@ -157,22 +121,12 @@ Function Write-Log($Info){
 
         write-host $info
         
-        #Write all information to Database Log File.
-        $SQLLOGINSERT = ""
-
-        if ($myver -like "*Dev*"){
-            $INPUTDATA = New-Object PSObject -Property @{DateTime=$date;Entry=$info}
-            Write-SqlTableData -ServerInstance localhost -InputData $INPUTDATA -DatabaseName ADsync -SchemaName dbo -TableName LOGDev
-            }
-        Else {
-            $INPUTDATA = New-Object PSObject -Property @{DateTime=$date;Entry=$info}
-            Write-SqlTableData -ServerInstance localhost -InputData $INPUTDATA -DatabaseName ADsync -SchemaName dbo -TableName LOG
-            }
-       #sleep(.1)              
+        #Write all information to General Log File.
+        Add-Content -Path $Log -Value ($date + ": " + $Info)
+        sleep(1)              
 } #End write-log Function
 
 #--------------------------------------------------------------------------------------------------
-
 function Get-RandomPassword 
  { 
   param( 
@@ -214,7 +168,7 @@ function Get-ComplexPassword
 Function Build-OU($Company,$Status,$Department) {
 
     $Compiledou = $Null
-    $CompanyOU =("OU=" + $company+ "," + $TOPOU + $distinguishedName)
+    $CompanyOU =("OU=" + $company+ "," + $distinguishedName)
 
     #Create Users OU
     if ($status -eq "FALSE"){ 
@@ -247,23 +201,23 @@ else{
  #   Write-Host ("OU " +$ou+" does not exist")
             
             if ($AllOus -notLike "*$CompanyOu*") {
-                New-ADOrganizationalUnit -name $Company -path ($TOPOU + $distinguishedName) -ProtectedFromAccidentalDeletion $ouProtect -Description $CompanyOuDescription
+                New-ADOrganizationalUnit -name $Company -path $distinguishedName -ProtectedFromAccidentalDeletion $ouProtect -Description $CompanyOuDescription
                 write-Log "$CompanyOu doesn't exist"
                 Write-log "Creating $companyou"
                 }
             if ($AllOus -notLike ("*$DisOU,"+$CompanyOu + "*")) {
                 New-ADOrganizationalUnit -name $DisabledOU -path $CompanyOu -ProtectedFromAccidentalDeletion $ouProtect -Description $InactiveOuDescription
-                write-Log "$DisabledOU OU doesn't exist"
+                write-Log "Inactive OU doesn't exist"
                 Write-log "Creating Inactive OU in $companyou"
                 }
             if ($AllOus -notLike ("*$UsersOU,"+$CompanyOu + "*")) {
                 New-ADOrganizationalUnit -name $UsersOU -path $CompanyOu -ProtectedFromAccidentalDeletion $ouProtect -Description $UserOuDescription
-                write-Log "$UsersOU OU doesn't exist"
+                write-Log "Users OU doesn't exist"
                 Write-log "Creating Users OU in $companyou"
                 }
             If (($ou -like "*$ServicesOU*") -and ($AllOus -notLike ("*Service,"+$CompanyOu + "*"))){
                 New-ADOrganizationalUnit -name $ServicesOU -path $CompanyOu -ProtectedFromAccidentalDeletion $ouProtect -Description $ServiceOuDescription
-                write-Log "$ServicesOU OU doesn't exist"
+                write-Log "Service OU doesn't exist"
                 Write-log "Creating Service OU in $companyou"
                 }
 
@@ -274,17 +228,14 @@ else{
 #End Functions ------------------------------------------------------------------------------------
 
 
+write-log ("`r`n")
 write-log ("--------------------------------------------------------------------------------------------------------")
 write-log ("Starting Script at: " + $ScriptStartTime)
 Write-log ("My Version is : "+ $myVer)
-write-log ("Domain Variables are`r`nCompany Name: " + $CompanyName)
-Write-log ("DistinguishedName: " + $distinguishedName)
-Write-log ("UPND: "  + $upnd)
+write-log ("`r`nDomain Variables are`r`nCompany Name: " + $CompanyName + "`r`nDistinguishedName: " + $distinguishedName + "`r`nUPND: "  + $upnd)
 write-log ("--------------------------------------------------------------------------------------------------------")
 
 write-log "Checking if Users Exist in the Domain:"
-#Checking for Each user if they Exist.
-#If the Sam Acct Name doesn't exist then create account accordingly.
 
 $CSVImport |
 foreach {
@@ -317,23 +268,15 @@ $Check = (Get-Aduser $_.samaccountname -ErrorAction Continue)
                         -GivenName $_.GivenName  `
                         -SurName $_.Surname `
                         -SamAccountName $_.samAccountName `
-                        -City ($_.City) `
-                        -Country AU -PostalCode ($_.PostCode) `
-                        -StreetAddress ($_.Street) `
+                        -City (Out-String -InputObject $_.City) `
+                        -Country AU -PostalCode (Out-String -InputObject $_.PostCode) `
+                        -StreetAddress (Out-String -InputObject $_.Street) `
                         -enabled $True `
                         -path $baseou `
                         -EmployeeID $_.EmployeeID `
                         -EmployeeNumber $_.EmployeeID `
-                        -office $_.office `
-                        -description $_.description `
-                        -department $_.Department `
-                        -company $_.Company `
-                        -Manager $_.Manager `
-                        -state $_.State `
                         -ErrorAction SilentlyContinue
                         
-
-
                         set-aduser $_.SamAccountName -userprincipalname $upntemp
                         set-aduser $_.SamAccountName -AccountExpirationDate $null
                         $_.Updated = Get-Date -format dd/MM/yyyy
@@ -355,20 +298,14 @@ $Check = (Get-Aduser $_.samaccountname -ErrorAction Continue)
                             -DisplayName $_.DisplayName `
                             -GivenName $_.GivenName `
                             -SamAccountName $_.samAccountName `
-                            -City ($_.City) `
+                            -City (Out-String -InputObject $_.City) `
                             -Country AU `
-                            -PostalCode ($_.PostCode) `
-                            -StreetAddress ($_.Street) `
+                            -PostalCode (Out-String -InputObject $_.PostCode) `
+                            -StreetAddress (Out-String -InputObject $_.Street) `
                             -enabled $True `
                             -path $baseou `
                             -EmployeeID $_.EmployeeID `
                             -EmployeeNumber $_.EmployeeID `
-                            -office $_.office `
-                            -description $_.description `
-                            -department $_.Department `
-                            -company $_.Company `
-                            -Manager $_.Manager `
-                            -state $_.State `
                             -ErrorAction SilentlyContinue
                             
                             set-aduser $_.SamAccountName -userprincipalname $upntemp
@@ -394,8 +331,6 @@ $Check = (Get-Aduser $_.samaccountname -ErrorAction Continue)
        }
 
 }
-
-#syncing other Base Variables
 write-log "Checking Other User Variables: "
 $CSVImport | Where Status -NotLike "*DELETED*"|
 
@@ -413,8 +348,6 @@ foreach {
     $userDep = $_.Department
     $OfficeNumber = $_.OfficeNumber
     $MobileNumber = $_.MobileNumber
-    $office = $_.Office
-    $CN = $
     $baseou = build-ou $Companyname $userStatus $userDep
 
    #Set Phone Number to $Null if there is Null in the Number Field
@@ -514,15 +447,6 @@ foreach {
                 $_.Updated = Get-Date -format dd/MM/yyyy
                 write-log -info ("Set Display Name for: " + $_.SamAccountName)
                 }
-           
-            #Cronical Name
-            #if ($user.CN -ne $_.DisplayName)
-            #    {
-            #    Set-ADUser -identity $_.SamAccountName `
-            #    -cn $_.DisplayName
-            #    $_.Updated = Get-Date -format dd/MM/yyyy
-            #    write-log -info ("Set Display Name for: " + $_.SamAccountName)
-            #    }
 
             #Company Information    
             if ($user.Company -ne $_.Company)
@@ -550,21 +474,8 @@ foreach {
                 $_.Updated = Get-Date -format dd/MM/yyyy
                 write-log -info ("Set Office Phone Number for: " + $_.SamAccountName + " To:" + $OfficeNumber)
                }
-
-            
-            #Office Location Update    
-            if ($user.Office -ne $Office)
-                {
-                #If Office Location Exists in DB Set Office Location
-                 If ($office.length -gt 2){
-                    Set-ADUser -identity $_.SamAccountName `
-                    -Office $Office
-                    $_.Updated = Get-Date -format dd/MM/yyyy
-                    write-log -info ("Set Office Location for: " + $_.SamAccountName + " To:" + $Office)
-                                            }
-                }
-                
             #Managers Details
+
             if ($managertemp -ne $_.Manager)
                 {
                 Set-ADUser -identity $_.SamAccountName `
@@ -630,6 +541,7 @@ foreach {
                         $_.Updated = Get-Date -format dd/MM/yyyy
                         set-aduser -Identity $_.SamAccountName `
                         -Organization $baseou
+                        
                         }
                 }
 
@@ -654,30 +566,53 @@ $_.Password = $null
 } #end Check user
 }
 
-
-
-write-log -info "Writing Data back to SQL Database"
-ForEach ($entry in $CSVImport)
-    {        
-        
-        
-        $updatedate = $entry.Updated
-        $updateSamAcctName = $entry.samAccountName
-        $UpdateDateQuery = "UPDATE       $SQLDATATABLENAME","SET                Updated = '$updatedate',Password = '$passwordoutput',jtitle = 'NULL'","WHERE        (samAccountName = '$updateSamAcctName')"
-        invoke-sqlcmd -ServerInstance $SQLDATABASESERVER -Query "$UpdateDateQuery" -Database $SQLDATABASENAME 
-
-    }
-
 $ScriptEndTime=(GET-DATE)
 write-log -info ("Finalising Script at: " + $ScriptEndTime)
 Write-Log -info ("Finishing Syncing...") 
 Write-Log -info ("Minutes: "+ ($ScriptEndTime - $ScriptStartTime).Minutes +" Seconds: " + ($ScriptEndTime - $ScriptStartTime).Seconds + "`r`n`r`n")
 
+write-host "Sleep1"
+Sleep(4)
+Remove-Item -path $CSVFile -force
+Add-Content -Path $CSVFile `
+-Value "Status,GivenName,Surname,samAccountName,DisplayName,Street,State,City,PostCode,Country,Manager,EmployeeID,Company,Description,Department,Updated,ScriptPath,Password,OfficeNumber,MobileNumber"
 
+
+
+ForEach ($entry in $CSVImport)
+    {
+         Add-content -path $CSVFile -Value (`
+         $entry.Status + "," +`
+         $entry.GivenName + "," +`
+         $entry.Surname + "," +`
+         $entry.samAccountName + "," +`
+         $entry.DisplayName + "," + 
+         $entry.Street + "," +`
+         $entry.State + "," +`
+         $entry.City + ","+ `
+         $entry.PostCode + "," +`
+         $entry.Country + "," +`
+         $entry.Manager + "," +`
+         $entry.EmployeeID + "," +`
+         $entry.Company + "," +`
+         $entry.Description + "," +`
+         $entry.Department + "," +`
+         $entry.Updated + "," +`
+         $entry.ScriptPath + "," +`
+         $entry.Password + "," +` 
+         $entry.OfficeNumber + "," +`
+         $entry.MobileNumber)
+         sleep(1)
+
+    }
+
+write-host "Sleep2"
+Sleep(5)
 
 $CSVImport = ""
 $entry = ""
 
 
 $ErrorActionPreference = "Continue"
-Remove-Variable Today_Date,Log,ScriptStartTime,csvimport,User,SQLDATATABLENAME,CSVExportFile -ErrorAction SilentlyContinue
+#$csvimport | export-csv $CSVExportFile
+Remove-Variable Today_Date,Log,ScriptStartTime,csvimport,User,CSVfile,CSVExportFile -ErrorAction SilentlyContinue

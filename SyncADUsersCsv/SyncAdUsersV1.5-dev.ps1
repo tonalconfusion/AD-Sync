@@ -317,13 +317,19 @@ $Check = (Get-Aduser $_.samaccountname -ErrorAction Continue)
                         -GivenName $_.GivenName  `
                         -SurName $_.Surname `
                         -SamAccountName $_.samAccountName `
-                        -City (Out-String -InputObject $_.City) `
-                        -Country AU -PostalCode (Out-String -InputObject $_.PostCode) `
-                        -StreetAddress (Out-String -InputObject $_.Street) `
+                        -City ($_.City) `
+                        -Country AU -PostalCode ($_.PostCode) `
+                        -StreetAddress ($_.Street) `
                         -enabled $True `
                         -path $baseou `
                         -EmployeeID $_.EmployeeID `
                         -EmployeeNumber $_.EmployeeID `
+                        -office $_.office `
+                        -description $_.description `
+                        -department $_.Department `
+                        -company $_.Company `
+                        -Manager $_.Manager `
+                        -state $_.State `
                         -ErrorAction SilentlyContinue
                         
 
@@ -349,14 +355,20 @@ $Check = (Get-Aduser $_.samaccountname -ErrorAction Continue)
                             -DisplayName $_.DisplayName `
                             -GivenName $_.GivenName `
                             -SamAccountName $_.samAccountName `
-                            -City (Out-String -InputObject $_.City) `
+                            -City ($_.City) `
                             -Country AU `
-                            -PostalCode (Out-String -InputObject $_.PostCode) `
-                            -StreetAddress (Out-String -InputObject $_.Street) `
+                            -PostalCode ($_.PostCode) `
+                            -StreetAddress ($_.Street) `
                             -enabled $True `
                             -path $baseou `
                             -EmployeeID $_.EmployeeID `
                             -EmployeeNumber $_.EmployeeID `
+                            -office $_.office `
+                            -description $_.description `
+                            -department $_.Department `
+                            -company $_.Company `
+                            -Manager $_.Manager `
+                            -state $_.State `
                             -ErrorAction SilentlyContinue
                             
                             set-aduser $_.SamAccountName -userprincipalname $upntemp
@@ -651,7 +663,7 @@ ForEach ($entry in $CSVImport)
         
         $updatedate = $entry.Updated
         $updateSamAcctName = $entry.samAccountName
-        $UpdateDateQuery = "UPDATE       $SQLDATATABLENAME","SET                Updated = '$updatedate',Password = '$passwordoutput'","WHERE        (samAccountName = '$updateSamAcctName')"
+        $UpdateDateQuery = "UPDATE       $SQLDATATABLENAME","SET                Updated = '$updatedate',Password = '$passwordoutput',jtitle = 'NULL'","WHERE        (samAccountName = '$updateSamAcctName')"
         invoke-sqlcmd -ServerInstance $SQLDATABASESERVER -Query "$UpdateDateQuery" -Database $SQLDATABASENAME 
 
     }
