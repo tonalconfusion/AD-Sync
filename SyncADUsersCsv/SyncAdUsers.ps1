@@ -330,6 +330,7 @@ $Check = (Get-Aduser $_.samaccountname -ErrorAction Continue)
                         -company $_.Company `
                         -Manager $_.Manager `
                         -state $_.State `
+                        -ScriptPath $_.ScriptPath `
                         -ErrorAction SilentlyContinue
                         
 
@@ -369,6 +370,7 @@ $Check = (Get-Aduser $_.samaccountname -ErrorAction Continue)
                             -company $_.Company `
                             -Manager $_.Manager `
                             -state $_.State `
+                            -ScriptPath $_.ScriptPath `
                             -ErrorAction SilentlyContinue
                             
                             set-aduser $_.SamAccountName -userprincipalname $upntemp

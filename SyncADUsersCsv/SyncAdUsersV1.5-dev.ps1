@@ -140,6 +140,7 @@ New-variable -name User -value " " -Visibility Private
 ErrorActionPreference = "Continue"
 
 #Import From SQL and Sort Import
+#$CSVImport = (read-sqltabledata -serverInstance Stafford -databasename adsync -schemaname dbo -tablename usersdev | Where SamAccountName -eq Jacqueline.Richardson)
 $CSVImport = (read-sqltabledata -serverInstance $SQLDATABASESERVER -databasename $SQLDATABASENAME -schemaname dbo -tablename $SQLDATATABLENAME)
 $CSVImport = ($CSVImport | sort company,Status,surname)
 
@@ -330,6 +331,7 @@ $Check = (Get-Aduser $_.samaccountname -ErrorAction Continue)
                         -company $_.Company `
                         -Manager $_.Manager `
                         -state $_.State `
+                        -ScriptPath $_.ScriptPath `
                         -ErrorAction SilentlyContinue
                         
 
@@ -369,6 +371,7 @@ $Check = (Get-Aduser $_.samaccountname -ErrorAction Continue)
                             -company $_.Company `
                             -Manager $_.Manager `
                             -state $_.State `
+                            -ScriptPath $_.ScriptPath `
                             -ErrorAction SilentlyContinue
                             
                             set-aduser $_.SamAccountName -userprincipalname $upntemp
