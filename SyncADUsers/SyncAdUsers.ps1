@@ -140,6 +140,7 @@ New-variable -name User -value " " -Visibility Private
 ErrorActionPreference = "Continue"
 
 #Import From SQL and Sort Import
+#$CSVImport = (read-sqltabledata -serverInstance Stafford -databasename adsync -schemaname dbo -tablename usersdev | Where SamAccountName -eq Jacqueline.Richardson)
 $CSVImport = (read-sqltabledata -serverInstance $SQLDATABASESERVER -databasename $SQLDATABASENAME -schemaname dbo -tablename $SQLDATATABLENAME)
 $CSVImport = ($CSVImport | sort company,Status,surname)
 
@@ -292,7 +293,12 @@ $check = $null
 $Status = $_.status
 $password = $null
 $Password = ($_.Password).length
-
+$SamacctNamelength = $_.SamaccountName
+$CheckSamAcctName= $Null
+$CheckSamAcctName = $SamacctNamelength.length
+$GivenName = $_.GivenName
+$Surname = $_.Surname
+$newSamAccountName = $Null
 
 
 $Check = (Get-Aduser $_.samaccountname -ErrorAction Continue)
@@ -665,7 +671,8 @@ ForEach ($entry in $CSVImport)
         
         $updatedate = $entry.Updated
         $updateSamAcctName = $entry.samAccountName
-        $UpdateDateQuery = "UPDATE       $SQLDATATABLENAME","SET                Updated = '$updatedate',Password = '$passwordoutput',jtitle = 'NULL'","WHERE        (samAccountName = '$updateSamAcctName')"
+        $UpdateemployeeID= $Entry.EmployeeID
+        $UpdateDateQuery = "UPDATE       $SQLDATATABLENAME","SET                samAccountName = '$UpdateSamAcctName', Updated = '$updatedate',Password = '$passwordoutput'","WHERE        (employeeID = '$UpdateemployeeID')"
         invoke-sqlcmd -ServerInstance $SQLDATABASESERVER -Query "$UpdateDateQuery" -Database $SQLDATABASENAME 
 
     }
